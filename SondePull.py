@@ -105,7 +105,9 @@ for S in range(len(stations)):
                 
                 #compute mixing ratio, pot. temp, spec. humidity, virtual pot. temp. 
                 pt = mpcalc.potential_temperature(p,t) 
-                q = mpcalc.specific_humidity_from_dewpoint(p,td)
+                # this is written for metpy 1.0, older versions of metpy want the arguments reversed in the below q to dp function
+                # check your version with metpy.__version__
+                q = mpcalc.specific_humidity_from_dewpoint(p,td) 
                 mr = mpcalc.mixing_ratio_from_specific_humidity(q)
                 vpt = mpcalc.virtual_potential_temperature(p, t, mr)
                 mr =  mr * 1000 * (units.gram/units.kilogram) #adjust units for viz
@@ -193,15 +195,11 @@ for S in range(len(stations)):
                         elv_inv_bl = z[top_inv_idx[0]+sfc_inv_idx[0]].magnitude
                     else:
                         sfc_inv_bl = z[top_inv_idx[0]+sfc_inv_idx[0]].magnitude # top of inversion layer
-                        next_inv_idx = np.where(signchange[(top_inv_idx[0]+sfc_inv_idx[0]):]==1)[0] #keep looking up
+                        next_inv_idx = np.where(signchange[(top_inv_idx[0]+sfc_inv_idx[0]+1):]==1)[0] #start at the next level and keep looking up
                         if next_inv_idx.shape[0] < 1: # no points found, no inversions exist
                             elv_inv_bl = np.nan
                         else:
                             elv_inv_bl = z[next_inv_idx[0]+top_inv_idx[0]+sfc_inv_idx[0]].magnitude #bottom of the layer
-                # now we want to do some screening for temps increasing from the sfc up -- problem spot.
-                if sfc_inv_bl < 10: # if it is less than 10 m
-                    print('hit')
-                    sfc_inv_bl = np.nan # this 0 would pull down the stats.
                 
                 
                 
@@ -211,8 +209,9 @@ for S in range(len(stations)):
                 #bl height is the median of all bl heights 
                 bl_hgt = np.nanmedian(bls)*units.meter 
                 
-                # plot it up
                 
+                
+                # plot it up
                 
                 # profiles
                 fig = plt.figure(figsize=(12,12))
