@@ -21,6 +21,7 @@ import scipy.stats as stat
 import scipy as sp
 from metpy.plots import add_metpy_logo, SkewT
 from metpy.units import units
+import netCDF4 as nc
 
 
 from siphon.simplewebservice.wyoming import WyomingUpperAir
@@ -31,16 +32,13 @@ from siphon.simplewebservice.wyoming import WyomingUpperAir
 plt.rcParams['font.size'] = 20
 
 # times/locs for PBLTops campaign 
-# months = [8,9]
-# days = np.arange(1,32,1)
-# hours = np.arange(0,24,1) # checking hourly for any special sondes, could change if you don't care
-
-# for testing
 months = [8,9]
-days = np.arange(1,3,1)
-hours = np.arange(0,24,6) # checking hourly for any special sondes, could change if you don't care
+days = np.arange(1,32,1)
+hours = np.arange(0,24,1) # checking hourly for any special sondes, could change if you don't care
 stations = ['OUN','SHV']
 for S in range(len(stations)):
+    BLHGT = []
+    SND_TIME = []
     if S == 1: # these start points clip the dates we dont need for SHV
         s_d = 4
         s_m = 1
@@ -124,7 +122,7 @@ for S in range(len(stations)):
                 
                 # range over which to search for the boundary layer top
                 top_search = np.where(z.magnitude>3000)[0][0] # we don't care above here
-                bot_search = np.where(z.magnitude>150)[0][0] # we don't care below here
+                bot_search = np.where(z.magnitude>100)[0][0] # we don't care below here
                 
                 # we will be applying several methods (M) as described in Seidel et al (2010) JGR-Atmos.
                 # M1 - parcel - height theta_v = theta_v(sfc)
@@ -137,8 +135,10 @@ for S in range(len(stations)):
                 # M7 - top of sfc based temp inversion
                 
                 # M1
-                # where in the search range does vpt become greater than sfc value
-                parcel_idx = np.where(vpt[bot_search:top_search] > vpt[0])[0]
+                # where in the search range does vpt become greater than sfc value(mean from sfc to 100m)
+                sfc_vpt = (vpt[0]+vpt[bot_search])/2. # mean of sfc value and the value at top of 100 m layer 
+                # to account for low-level data anomalies, missing data points, pre-launch data, etc.
+                parcel_idx = np.where(vpt[bot_search:top_search] > sfc_vpt)[0]
                 if parcel_idx.shape[0] < 1: #no points were found where vpt>sfc value
                     parcel_bl = np.nan # so put a nan in
                 if parcel_idx[0]==1: # this means vpt is immediately increasing so lets ignore this
@@ -148,7 +148,7 @@ for S in range(len(stations)):
                     
                 # M1_a
                 # where in the search range does vpt become greater than sfc value +.6K
-                parcel_a_idx = np.where(vpt[bot_search:top_search] > (vpt[0]+.6*units.K))[0]
+                parcel_a_idx = np.where(vpt[bot_search:top_search] > (sfc_vpt+.6*units.K))[0]
                 if parcel_a_idx.shape[0] < 1: #no points were found where vpt>sfc value +.6K
                     parcel_a_bl = np.nan # so put a nan in
                 if parcel_a_idx[0]==1: # this means vpt is immediately increasing so lets ignore this
@@ -209,6 +209,9 @@ for S in range(len(stations)):
                 #bl height is the median of all bl heights 
                 bl_hgt = np.nanmedian(bls)*units.meter 
                 
+                #append to station lists for writeout later
+                BLHGT.append(bl_hgt.magnitude) # bl height in meters
+                SND_TIME.append(int(date.timestamp())) #epoch seconds for the launch time
                 
                 
                 # plot it up
@@ -234,9 +237,9 @@ for S in range(len(stations)):
                 ax1.legend(loc='upper right')
                 ax2.legend(loc='upper left')
                 #plt.grid()
-                #plt.savefig('/Users/elizabeth.smith/Documents/PBLTops/sonde_plots/'+file_name+'.png')
-                plt.show()
-                #plt.close()
+                plt.savefig('/Users/elizabeth.smith/Documents/PBLTops/sonde_plots/'+file_name+'.png')
+                #plt.show()
+                plt.close()
                 
                 
                 
@@ -279,3 +282,42 @@ for S in range(len(stations)):
                 # add_metpy_logo(fig, 115, 100)
                 # plt.show()
                 print('End')
+                
+                
+                
+    # write out
+    snd_time = np.asarray(SND_TIME)
+    bl_height = np.asarray(BLHGT)
+    
+    # create output file nc4.Dataset(name, write mode, clear if it exists, file format)
+    output_file = nc.Dataset('/Users/elizabeth.smith/Documents/PBLTops/output_files/'+str(station)+'.nc', 'w', clobber=True, format='NETCDF3_64BIT')
+    
+    # global attributes
+    output_file.title = 'PBL Heights estimated from '+str(station)
+    output_file.author = 'Elizabeth Smith, NSSL'
+    output_file.contact = 'Elizabeth.smith@noaa.gov'
+    output_file.reference = 'https://github.com/eeeeelizzzzz/SondePull/'
+    
+    # define dimensions       (name,value)
+    output_file.createDimension('t', len(snd_time)) #time dimension
+    
+    # create a variable file.createVariable(name, precision, dimensions) = values (usually some array)    
+    output_file.createVariable('t','f8',('t'))[:] = snd_time
+    setattr(output_file.variables['t'],'units','seconds epoch time (since 00UTC on 1/1/1970)')
+    setattr(output_file.variables['t'],'description','valid times for sondes (+1hr since launch) epoch seconds')
+
+    # create a variable file.createVariable(name, precision, dimensions) = values (usually some array)    
+    output_file.createVariable('pbl_h','f8',('t'))[:] = bl_height
+    setattr(output_file.variables['pbl_h'],'units','m AGL')
+    setattr(output_file.variables['pbl_h'],'description','PBL height estimated from radiosonde profiles. See github reference for details.')   
+    
+    output_file.close()
+    print("File written")
+    
+    
+    
+                
+                
+                
+                
+                
