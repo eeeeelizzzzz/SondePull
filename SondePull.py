@@ -31,9 +31,14 @@ from siphon.simplewebservice.wyoming import WyomingUpperAir
 plt.rcParams['font.size'] = 20
 
 # times/locs for PBLTops campaign 
+# months = [8,9]
+# days = np.arange(1,32,1)
+# hours = np.arange(0,24,1) # checking hourly for any special sondes, could change if you don't care
+
+# for testing
 months = [8,9]
-days = np.arange(1,32,1)
-hours = np.arange(0,24,1) # checking hourly for any special sondes, could change if you don't care
+days = np.arange(1,3,1)
+hours = np.arange(0,24,6) # checking hourly for any special sondes, could change if you don't care
 stations = ['OUN','SHV']
 for S in range(len(stations)):
     if S == 1: # these start points clip the dates we dont need for SHV
@@ -105,41 +110,105 @@ for S in range(len(stations)):
                 vpt = mpcalc.virtual_potential_temperature(p, t, mr)
                 mr =  mr * 1000 * (units.gram/units.kilogram) #adjust units for viz
                 
-                # vertical gradients
+                # vertical gradients (actually differences, but since interpolated to constant spacing /dz would cancel anyway)
                 # we care about value of gradient
-                d_mr = np.abs(np.diff(mr))
-                d_pt = np.abs(np.diff(pt))
-                d_q = np.abs(np.diff(q))
-                d_vpt = np.abs(np.diff(vpt))
+                d_mr = np.diff(mr)
+                d_pt = np.diff(pt)
+                d_q = np.diff(q)
+                d_vpt = np.diff(vpt)
+                d_rh = np.diff(rh)
+                d_t = np.diff(t)
                 
                 
                 # range over which to search for the boundary layer top
                 top_search = np.where(z.magnitude>3000)[0][0] # we don't care above here
                 bot_search = np.where(z.magnitude>150)[0][0] # we don't care below here
                 
-                # do the searchin
-                pt_bl = z[np.argmax(d_pt[bot_search:top_search])+bot_search]
-                vpt_bl = z[np.argmax(d_vpt[bot_search:top_search])+bot_search]
+                # we will be applying several methods (M) as described in Seidel et al (2010) JGR-Atmos.
+                # M1 - parcel - height theta_v = theta_v(sfc)
+                # M1_a - parcel_conig - height theta_v = theta_v(sfc) + .6K from Coniglio et al (2013) Wea. Forecasting
+                # M2 - max pt gradient
+                # M3 - min spec. hum gradient
+                # M4 - min RH gradient
+                # M5 - min refractivity gradient -- do not have this varible so skipping
+                # M6 - base of elevated temp inversion
+                # M7 - top of sfc based temp inversion
                 
-                # confine moisture variable to within some range of vtemp variable ID'd level
-                new_llim = np.where(z>vpt_bl-vpt_bl*.25)[0]
-                new_ulim = np.where(z>vpt_bl+vpt_bl*.25)[0]
-                if len(new_llim)>0: 
-                    new_bot = max(bot_search, new_llim[0])
-                else: #did not find one, beyond bounds
-                    new_bot = bot_search
-                if len(new_ulim)>0:
-                    new_top = min(top_search, new_ulim[0])
-                else: #did not find one, beyond bounds
-                    new_top = top_search
+                # M1
+                # where in the search range does vpt become greater than sfc value
+                parcel_idx = np.where(vpt[bot_search:top_search] > vpt[0])[0]
+                if parcel_idx.shape[0] < 1: #no points were found where vpt>sfc value
+                    parcel_bl = np.nan # so put a nan in
+                if parcel_idx[0]==1: # this means vpt is immediately increasing so lets ignore this
+                    parcel_bl = np.nan # so put a nan in
+                else:
+                    parcel_bl = z[parcel_idx[0]+bot_search].magnitude #height of the first index where vpt is great than the sfc value
+                    
+                # M1_a
+                # where in the search range does vpt become greater than sfc value +.6K
+                parcel_a_idx = np.where(vpt[bot_search:top_search] > (vpt[0]+.6*units.K))[0]
+                if parcel_a_idx.shape[0] < 1: #no points were found where vpt>sfc value +.6K
+                    parcel_a_bl = np.nan # so put a nan in
+                if parcel_a_idx[0]==1: # this means vpt is immediately increasing so lets ignore this
+                    parcel_a_bl = np.nan # so put a nan in
+                else:
+                    parcel_a_bl = z[parcel_a_idx[0]+bot_search].magnitude #height of the first index where vpt is great than the sfc value +.6K
             
-                q_bl = z[np.argmax(d_q[new_bot:new_top])+new_bot]
-                mr_bl = z[np.argmax(d_mr[new_bot:new_top])+new_bot]
+                
+                # M2
+                # max pt grad
+                pt_bl = z[np.argmax(d_pt[bot_search:top_search])+bot_search].magnitude
+                
+                # M3
+                # min spec hum gradient
+                q_bl = z[np.argmin(d_q[bot_search:top_search])+bot_search].magnitude
+                
+                # M4
+                # min RHgradient
+                rh_bl = z[np.argmin(d_rh[bot_search:top_search])+bot_search].magnitude
+                
+                # for M6 and M7 we need temperature inversions, so lets get a profile of sign changes of t
+                tsign = np.sign(d_t.magnitude) #find sign of gradient vals
+                signchange = ((np.roll(tsign, 1) - tsign) != 0).astype(int) #return 1 for sign change, 0 for not
+                signchange[0]=0 #setting since numpy.roll does a circular shift, so if the last element has different 
+                # sign than the first, the first element in the signchange array will be 1
+                #note -1, +1, and 0 are all considered unique signs here
+                
+                # M6 and M7 - doing 7 and 6 together searching from bottom up
+                #  top of sfc based temp inversion, bottom of elevated temp inversion
+                sfc_inv_idx = np.where(signchange==1)[0] # first time the sign changes! 
+                if sfc_inv_idx.shape[0] < 1: # no points found, no inversions exist
+                    sfc_inv_bl = np.nan
+                    elv_inv_bl = np.nan # by extension this is also a nan and we can move on
+                else:
+                    #we actually want the top of this inversion so we need to keep looking up
+                    top_inv_idx = np.where(signchange[sfc_inv_idx[0]:]==1)[0]
+                    if top_inv_idx.shape[0] < 1: # no points found, no inversions exist
+                        sfc_inv_bl = z[sfc_inv_idx[0]].magnitude #inversion was 1 point deep
+                        # there are no inversions aloft so 
+                        elv_inv_bl = np.nan
+                    elif z[top_inv_idx[0]] - z[sfc_inv_idx[0]] > 300*units.meter: 
+                    #if the next sign change is too far away to be the top of an inversion layer
+                        sfc_inv_bl = z[sfc_inv_idx[0]].magnitude
+                        elv_inv_bl = z[top_inv_idx[0]].magnitude
+                    else:
+                        sfc_inv_bl = z[top_inv_idx[0]].magnitude # top of inversion layer
+                        next_inv_idx = np.where(signchange[top_inv_idx[0]:]==1)[0] #keep looking up
+                        if next_inv_idx.shape[0] < 1: # no points found, no inversions exist
+                            elv_inv_bl = np.nan
+                        else:
+                            elv_inv_bl = z[next_inv_idx[0]].magnitude #bottom of the layer
+                # now we want to do some screening for temps increasing from the sfc up -- problem spot.
+                if sfc_inv_bl < 10: # if it is less than 10 m
+                    sfc_inv_bl = np.nan # this 0 would pull down the stats.
+                
+                
                 
                 # put em all together
-                list_bl = [mr_bl.magnitude, pt_bl.magnitude, q_bl.magnitude, vpt_bl.magnitude]
+                list_bl = [parcel_bl, parcel_a_bl, pt_bl, q_bl, rh_bl, sfc_inv_bl, elv_inv_bl]
                 bls = np.asarray(list_bl)
-                bl_hgt = np.median(bls)*units.meter 
+                #bl height is the median of all bl heights 
+                bl_hgt = np.nanmedian(bls)*units.meter 
                 
                 # plot it up
                 
@@ -150,20 +219,24 @@ for S in range(len(stations)):
                 ax1 = fig.add_subplot(111)
                 ax2 = ax1.twiny()
                 ax1.plot(pt,z,'r',lw=3,label='Pot. Temp.')
-                plt.axhline(pt_bl,color='r')
-                ax1.plot(vpt,z,'g',lw=3,label='V Pot. Temp.')
-                plt.axhline(vpt_bl,color='g')
-                ax2.plot(mr,z,'b',lw=3,label='Mix. Ratio')
-                plt.axhline(mr_bl,color='b')
-                plt.axhline(bl_hgt,color='k',lw=5,ls='--')
-                ax1.set_xlim(300,320)
-                ax2.set_xlim(0,20)
+                ax2.plot(rh*(100),z,'b',lw=3,label='RH')
+                ax1.axhline(parcel_bl,color='c',label='M1')
+                ax1.axhline(parcel_a_bl,color='b',label='M1_a')
+                ax1.axhline(pt_bl,color='r',label='M2')
+                ax1.axhline(q_bl,color='m',label='M3')
+                ax2.axhline(rh_bl,color='g',label='M4')
+                ax2.axhline(elv_inv_bl,color='darkred',label='M6')
+                ax2.axhline(sfc_inv_bl,color='orange',label='M7')
+                ax2.axhline(bl_hgt,color='k',lw=5,ls='--')
+                ax1.set_xlim(280,320)
+                ax2.set_xlim(0,100)
                 plt.ylim(0,3000)
                 ax1.legend(loc='upper right')
                 ax2.legend(loc='upper left')
                 #plt.grid()
-                plt.savefig('/Users/elizabeth.smith/Documents/PBLTops/sonde_plots/'+file_name+'.png')
-                plt.close()
+                #plt.savefig('/Users/elizabeth.smith/Documents/PBLTops/sonde_plots/'+file_name+'.png')
+                plt.show()
+                #plt.close()
                 
                 
                 
