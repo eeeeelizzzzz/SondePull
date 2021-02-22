@@ -187,19 +187,20 @@ for S in range(len(stations)):
                         sfc_inv_bl = z[sfc_inv_idx[0]].magnitude #inversion was 1 point deep
                         # there are no inversions aloft so 
                         elv_inv_bl = np.nan
-                    elif z[top_inv_idx[0]] - z[sfc_inv_idx[0]] > 300*units.meter: 
+                    elif z[top_inv_idx[0]+sfc_inv_idx[0]] - z[sfc_inv_idx[0]] > 300*units.meter: 
                     #if the next sign change is too far away to be the top of an inversion layer
                         sfc_inv_bl = z[sfc_inv_idx[0]].magnitude
-                        elv_inv_bl = z[top_inv_idx[0]].magnitude
+                        elv_inv_bl = z[top_inv_idx[0]+sfc_inv_idx[0]].magnitude
                     else:
-                        sfc_inv_bl = z[top_inv_idx[0]].magnitude # top of inversion layer
-                        next_inv_idx = np.where(signchange[top_inv_idx[0]:]==1)[0] #keep looking up
+                        sfc_inv_bl = z[top_inv_idx[0]+sfc_inv_idx[0]].magnitude # top of inversion layer
+                        next_inv_idx = np.where(signchange[(top_inv_idx[0]+sfc_inv_idx[0]):]==1)[0] #keep looking up
                         if next_inv_idx.shape[0] < 1: # no points found, no inversions exist
                             elv_inv_bl = np.nan
                         else:
-                            elv_inv_bl = z[next_inv_idx[0]].magnitude #bottom of the layer
+                            elv_inv_bl = z[next_inv_idx[0]+top_inv_idx[0]+sfc_inv_idx[0]].magnitude #bottom of the layer
                 # now we want to do some screening for temps increasing from the sfc up -- problem spot.
                 if sfc_inv_bl < 10: # if it is less than 10 m
+                    print('hit')
                     sfc_inv_bl = np.nan # this 0 would pull down the stats.
                 
                 
