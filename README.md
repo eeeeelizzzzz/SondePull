@@ -26,6 +26,7 @@ At present it reads in sounding data and uses the various methods (Mx) to detect
 - datetime
 - matplotlib
 - metpy (https://github.com/Unidata/MetPy); note this code uses version 1.0 in which the specific_humidity_from_dewpoint function arguments are (pressure, dewpoint). Older versions have those arguments reversed. Check your version with <metpy.__version__> and either update or reverse the arguements as needed.
+- netcdf4 -- could bypass if commenting out the writeout portion of the code.
 - numpy
 - pandas
 - scipy
