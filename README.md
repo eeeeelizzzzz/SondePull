@@ -9,6 +9,7 @@ This algorthim was developed from some examples shared by Drs. Jeremy Gibbs and 
 
 It currently uses the Wyoming archive, but could be adapted to work with the IGRA2 arhcive as well! 
 
+
 At present it reads in sounding data and uses the various methods (Mx) to detect PBL height defined in Seidel et al (2010): _Estimating climatological planetary boundary layer heights from radiosonde observations: Comparison of methods and uncertainty analysis_. JGR Atmos., *115(D16)*.
 
 - M1 - parcel - height theta_v = theta_v(sfc)
@@ -27,8 +28,8 @@ At present it reads in sounding data and uses the various methods (Mx) to detect
 - matplotlib
 - metpy (https://github.com/Unidata/MetPy); note this code uses version 1.0 in which the specific_humidity_from_dewpoint function arguments are (pressure, dewpoint). Older versions have those arguments reversed. Check your version with <metpy.__version__> and either update or reverse the arguements as needed.
 - netcdf4 -- could bypass if commenting out the writeout portion of the code.
+- metpy (https://github.com/Unidata/MetPy)
 - numpy
 - pandas
 - scipy
 - siphon (https://github.com/Unidata/siphon)
-
