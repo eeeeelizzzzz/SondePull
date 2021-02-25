@@ -31,13 +31,19 @@ from siphon.simplewebservice.wyoming import WyomingUpperAir
 # big fonts are the best fonts
 plt.rcParams['font.size'] = 20
 
+
 # times/locs for PBLTops campaign 
 months = [8,9]
 days = np.arange(1,32,1)
 hours = np.arange(0,24,1) # checking hourly for any special sondes, could change if you don't care
 stations = ['OUN','SHV']
+
+
+
 for S in range(len(stations)):
     BLHGT = []
+    BL25 = []
+    BL75 = []
     SND_TIME = []
     if S == 1: # these start points clip the dates we dont need for SHV
         s_d = 4
@@ -71,6 +77,7 @@ for S in range(len(stations)):
                     continue
                 # get rid of fields we don't need (strings make issues in interpolation)
                 print('Data located for '+file_name+'.......')
+                df_orig1 = df_orig
                 df_orig = df_orig.drop(['station','station_number','time','latitude','longitude','elevation'],axis=1)
                 # interpolating z to get reg spacing for differencing and get rid of nans
                 # this may be problematic for some application, use caution
@@ -206,11 +213,14 @@ for S in range(len(stations)):
                 # put em all together
                 list_bl = [parcel_bl, parcel_a_bl, pt_bl, q_bl, rh_bl, sfc_inv_bl, elv_inv_bl]
                 bls = np.asarray(list_bl)
+                      
                 #bl height is the median of all bl heights 
                 bl_hgt = np.nanmedian(bls)*units.meter 
                 
                 #append to station lists for writeout later
                 BLHGT.append(bl_hgt.magnitude) # bl height in meters
+                BL25.append(np.percentile(bl_hgt.magnitude,25))
+                BL75.append(np.percentile(bl_hgt.magnitude,75))
                 SND_TIME.append(int(date.timestamp())) #epoch seconds for the launch time
                 
                 
@@ -239,7 +249,7 @@ for S in range(len(stations)):
                 #plt.grid()
                 plt.savefig('/Users/elizabeth.smith/Documents/PBLTops/sonde_plots/'+file_name+'.png')
                 #plt.show()
-                plt.close()
+                #plt.close()
                 
                 
                 
@@ -288,6 +298,8 @@ for S in range(len(stations)):
     # write out
     snd_time = np.asarray(SND_TIME)
     bl_height = np.asarray(BLHGT)
+    bl_25 = np.asarray(BL25)
+    bl_75 = np.asarray(BL75)
     
     # create output file nc4.Dataset(name, write mode, clear if it exists, file format)
     output_file = nc.Dataset('/Users/elizabeth.smith/Documents/PBLTops/output_files/'+str(station)+'.nc', 'w', clobber=True, format='NETCDF3_64BIT')
@@ -310,6 +322,14 @@ for S in range(len(stations)):
     output_file.createVariable('pbl_h','f8',('t'))[:] = bl_height
     setattr(output_file.variables['pbl_h'],'units','m AGL')
     setattr(output_file.variables['pbl_h'],'description','PBL height estimated from radiosonde profiles. See github reference for details.')   
+    
+    output_file.createVariable('pbl_25perc','f8',('t'))[:] = bl_25
+    setattr(output_file.variables['pbl_25perc'],'units','m AGL')
+    setattr(output_file.variables['pbl_25perc'],'description','25th percentile of all considered PBL height estimates')
+    
+    output_file.createVariable('pbl_75perc','f8',('t'))[:] = bl_75
+    setattr(output_file.variables['pbl_75perc'],'units','m AGL')
+    setattr(output_file.variables['pbl_75perc'],'description','75th percentile of all considered PBL height estimates')
     
     output_file.close()
     print("File written")
