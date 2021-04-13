@@ -35,15 +35,15 @@ plt.rcParams['font.size'] = 20
 
 
 # times/locs for PBLTops campaign  or CHEESEHEAD
-years = [2019]
-#years = [2020]
-#months = [8,9]
-months = [9,10]
+#years = [2019]
+years = [2020]
+months = [8,9]
+#months = [9,10]
 days = np.arange(1,32,1)
-hours = np.arange(0,24,1) # checking hourly for any special sondes, could change if you don't care
-#stations = ['OUN','SHV']
-stations = ['CHS']
-grade = 1 # parameter defining sounding type, 0 = public quality NWS sonde, 1 = research quality NCAR sonde
+hours = np.arange(0,24,3) # checking hourly for any special sondes, could change if you don't care
+stations = ['OUN','SHV']
+#stations = ['CHS']
+grade = 0 # parameter defining sounding type, 0 = public quality NWS sonde, 1 = research quality NCAR sonde
 
 def NCAR_sounding(file_name):
     f = nc.Dataset(file_name,'r')
@@ -125,7 +125,7 @@ for S in range(len(stations)):
                 hour = hours[H]
                 year = years[0]
                 # set the date you want to pull a sonde
-                date = datetime(year, month, day, hour)
+                date = datetime(year, month, day, hour).replace(tzinfo=timezone.utc)
                 
                 # this creates a string for printing and for file writeout
                 file_name = station+'_'+str(year)+'_0'+str(month)+'_'+str(day)+'_'+str(hour)+'Z'
@@ -171,6 +171,7 @@ for S in range(len(stations)):
                     v = v * units.knot
                     rh = mpcalc.relative_humidity_from_dewpoint(t,td)
                     rh = rh * units.percent
+                    rh = rh * 100.
                     
                     #compute mixing ratio, pot. temp, spec. humidity, virtual pot. temp. 
                     pt = mpcalc.potential_temperature(p,t) 
@@ -313,12 +314,13 @@ for S in range(len(stations)):
                 
                 # vertical gradients (actually differences, but since interpolated to constant spacing /dz would cancel anyway)
                 # we care about value of gradient
-                # d_mr = np.diff(mr)
-                # d_pt = np.diff(pt)
-                # d_q = np.diff(q)
-                # d_vpt = np.diff(vpt)
-                # d_rh = np.diff(rh)
-                # d_t = np.diff(t)
+                if grade == 0: #not using research grade sondes
+                    d_mr = np.diff(mr)
+                    d_pt = np.diff(pt)
+                    d_q = np.diff(q)
+                    d_vpt = np.diff(vpt)
+                    d_rh = np.diff(rh)
+                    d_t = np.diff(t)
                 
                 
                 # range over which to search for the boundary layer top
@@ -415,7 +417,10 @@ for S in range(len(stations)):
                 BLHGT.append(bl_hgt.magnitude) # bl height in meters
                 BL25.append(np.percentile(bls,25))
                 BL75.append(np.percentile(bls,75))
-                SND_TIME.append(int(full_date.timestamp())) #epoch seconds for the launch time
+                if grade == 1: #research grade sonde have higher res time info
+                    SND_TIME.append(int(full_date.timestamp())) #epoch seconds for the launch time
+                if grade == 0:
+                    SND_TIME.append(int(date.timestamp()))
                 Parcel_bl.append(parcel_bl)
                 Parcel_a_bl.append(parcel_a_bl) #.6K
                 Pt_bl.append(pt_bl)
